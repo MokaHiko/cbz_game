@@ -1,0 +1,9 @@
+{
+    "diagnostics.globals": [
+        "gltf",
+        "position",
+        "rotation",
+        "camera",
+        "lights"
+    ]
+}

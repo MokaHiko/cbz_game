@@ -15,8 +15,11 @@ struct VOut {
 [shader("vertex")]
 VOut vertexMain(Vin in, cbz::Draw draw) {
   VOut output;
-  output.position = mul(draw.viewProj(), float4(in.position.xyz, 1.0f));
+
   output.localPosition = in.position.xyz;
+
+  float4 clipPos = mul(draw.viewProj(), float4(in.position.xyz, 1.0f));
+  output.position = clipPos.xyww;
   return output;
 }
 
@@ -29,10 +32,9 @@ float2 SampleSphericalMap(float3 v) {
 }
 
 [[vk_binding(cbz::TEXTURE0)]]
-cbz::SampledTexture equirectangularMap;
+cbz::SampledTextureCube skyBox;
 
 [shader("fragment")]
 float4 fragmentMain(VOut in) : SV_Target {
-  float2 uv = SampleSphericalMap(normalize(in.localPosition));
-  return float4(equirectangularMap.sample(uv).xyz, 1.0f);
+  return float4(skyBox.sample(in.localPosition).xyz, 1.0f);
 }

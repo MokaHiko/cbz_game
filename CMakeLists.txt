@@ -3,24 +3,25 @@ project(cubozoa_game VERSION 0.1.0 LANGUAGES CXX C)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Engine 
 add_subdirectory(cbz)
 add_subdirectory(cbz_gfx)
 add_subdirectory(cbz_ecs)
 
-# Client game
-add_subdirectory(game_rts)
+# Game
+add_subdirectory(game)
+add_subdirectory(editor)
 
-# If edit mode
-add_subdirectory(cubozoa_editor)
-
+# Track shaders
 file(GLOB_RECURSE ASSET_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/*"
 )
 
 # Set your shader source and output directories
 set(SHADER_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders)
-set(SHADER_OUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/cubozoa_editor/assets/shaders)
-#set(SHADER_OUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/assets/shaders)
+
+# TODO: Check if editor or game
+set(SHADER_OUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/editor/assets/shaders)
 
 # Find all .slang files recursively
 file(GLOB_RECURSE SLANG_SHADERS RELATIVE ${SHADER_SRC_DIR} ${SHADER_SRC_DIR}/*.slang)

@@ -6,6 +6,17 @@ docs
 [Bb]uild-web
 [Bb]uild-vs2022/
 
+# assets
+*.png
+*.jpeg
+*.jpg
+*.hdr
+*.bin
+*.fbx
+*.gltf
+*.glb
+*.wav
+
 # clang
 .cache
 

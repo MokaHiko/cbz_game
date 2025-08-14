@@ -83,4 +83,11 @@ public struct SampledTexture {
   private SamplerState mSampler;
 };
 
+public struct SampledTextureCube {
+  public float4 sample(float3 uv) { return mTexture.Sample(mSampler, uv); };
+
+  private TextureCube mTexture;
+  private SamplerState mSampler;
+};
+
 } // namespace cbz
