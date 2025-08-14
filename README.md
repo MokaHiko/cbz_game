@@ -4,15 +4,19 @@ This is the **CBZ RTS** project built on top of the CBZ framework.
 
 ## 🛠️ Building the Project
 
-### 1. Download the Assets
-Before running CMake, **you must download the asset pack**.  
+### 1. Clone the Repository
+```bash
+git clone --recursive git@github.com:MokaHiko/cbz_game.git
+```
+
+### 2. Download the Assets
 Run this from the root of the repository:
 
 ```bash
 python download_assets.py
 ```
 
-### 2. Configure with CMake
+### 3. Configure with CMake
 
 ```bash
 cmake -S ./ -B ./build

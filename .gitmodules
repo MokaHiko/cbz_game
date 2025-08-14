@@ -1,9 +1,9 @@
-[submodule "cubozoa"]
-	path = cubozoa
-	url = https://github.com/MokaHiko/cubozoa.git
-[submodule "cubozoa_ecs"]
-	path = cubozoa_ecs
-	url = https://github.com/MokaHiko/cubozoa_ecs.git
+[submodule "cbz_gfx"]
+	path = cbz_gfx
+	url = https://github.com/MokaHiko/cbz_gfx.git
+[submodule "cbz_ecs"]
+	path = cbz_ecs
+	url = https://github.com/MokaHiko/cbz_ecs.git
 [submodule "cbz"]
 	path = cbz
 	url = https://github.com/MokaHiko/cbz.git
