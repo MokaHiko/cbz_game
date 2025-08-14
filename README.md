@@ -6,7 +6,7 @@ This is the **CBZ RTS** project built on top of the CBZ framework.
 
 ### 1. Clone the Repository
 ```bash
-git clone --recursive git@github.com:MokaHiko/cbz_game.git
+git clone --recursive https://github.com/MokaHiko/cbz_game.git
 ```
 
 ### 2. Download the Assets
