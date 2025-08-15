@@ -1,6 +1,7 @@
 module cbz;
 
 namespace cbz {
+
 public const static int BUFFER0 = 0;
 public const static int BUFFER1 = 1;
 
@@ -11,6 +12,8 @@ public const static int TEXTURE1 = 6;
 public const static int TEXTURE2 = 8;
 public const static int TEXTURE3 = 10;
 public const static int TEXTURE4 = 12;
+public const static int TEXTURE5 = 14;
+public const static int TEXTURE6 = 16;
 
 public static const float32_t PI = 3.14159265359;
 

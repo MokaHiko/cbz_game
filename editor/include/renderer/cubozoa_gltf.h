@@ -12,7 +12,7 @@ public:
   StaticMeshRenderer();
   ~StaticMeshRenderer();
 
-  void render(const Camera *camera, const LightSource *lightSources,
+  void render(const Camera *camera, const Skybox* skybox, const LightSource *lightSources,
               uint32_t count, Transform *transform, Primitive *mesh);
 
 private:

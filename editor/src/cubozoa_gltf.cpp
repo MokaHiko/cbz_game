@@ -621,16 +621,22 @@ StaticMeshRenderer::~StaticMeshRenderer() {
 }
 
 #include "renderer/cubozoa_render_graph.h"
-void StaticMeshRenderer::render(const Camera *camera,
+void StaticMeshRenderer::render(const Camera *camera, const Skybox* skybox,
                                 const LightSource *lightSources, uint32_t count,
                                 Transform *transform, Primitive *primitive) {
   glm::mat4 globalTransform = transform->get();
+
+  cbz::TextureBindingDesc linearTexDesc = {};
+  linearTexDesc.filterMode = CBZ_FILTER_MODE_LINEAR;
+
+  cbz::TextureBindingDesc nearestTextDesc = {};
+  nearestTextDesc.filterMode = CBZ_FILTER_MODE_NEAREST;
 
   if (false) { // GBuffer
     cbz::VertexBufferSet(primitive->vbh);
     cbz::IndexBufferSet(primitive->ibh);
 
-    cbz::TextureSet(CBZ_TEXTURE_0, primitive->materialRef.albedoTexture.imgh);
+    cbz::TextureSet(CBZ_TEXTURE_0, primitive->materialRef.albedoTexture.imgh, linearTexDesc);
 
     cbz::TransformSet(glm::value_ptr(globalTransform));
     cbz::ViewSet(camera->view);
@@ -657,12 +663,19 @@ void StaticMeshRenderer::render(const Camera *camera,
   }
 
   cbz::UniformSet(primitive->materialRef.uh, &primitive->materialRef.uData);
-  cbz::TextureSet(CBZ_TEXTURE_0, primitive->materialRef.albedoTexture.imgh);
+  cbz::TextureSet(CBZ_TEXTURE_0, primitive->materialRef.albedoTexture.imgh, linearTexDesc);
   cbz::TextureSet(CBZ_TEXTURE_1,
-                  primitive->materialRef.metallicRoughnessTexture.imgh);
-  cbz::TextureSet(CBZ_TEXTURE_2, primitive->materialRef.normalTexture.imgh);
-  cbz::TextureSet(CBZ_TEXTURE_3, primitive->materialRef.occlusionTexture.imgh);
-  cbz::TextureSet(CBZ_TEXTURE_4, primitive->materialRef.emissiveTexture.imgh);
+                  primitive->materialRef.metallicRoughnessTexture.imgh, linearTexDesc);
+  cbz::TextureSet(CBZ_TEXTURE_2, primitive->materialRef.normalTexture.imgh, linearTexDesc);
+
+  cbz::TextureSet(CBZ_TEXTURE_3, primitive->materialRef.occlusionTexture.imgh, nearestTextDesc);
+
+  cbz::TextureSet(CBZ_TEXTURE_4, primitive->materialRef.emissiveTexture.imgh, linearTexDesc);
+
+  cbz::TextureBindingDesc linearCubeDesc = {};
+  linearCubeDesc.viewDimension = CBZ_TEXTURE_VIEW_DIMENSION_CUBE;
+  linearCubeDesc.filterMode = CBZ_FILTER_MODE_LINEAR;
+  cbz::TextureSet(CBZ_TEXTURE_5, skybox->irradianceCubeMap, linearCubeDesc);
 
   cbz::TransformSet(glm::value_ptr(globalTransform));
   cbz::ViewSet(camera->view);

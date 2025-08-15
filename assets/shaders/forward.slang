@@ -75,8 +75,8 @@ FOut fragmentMain(VOut input) {
   float3 wo = normalize(uScene.camera_position.xyz - input.frag_position);
 
   float3 lo = 0;
-  lo += material.ambient(sg);
   lo += uDirLight.illuminate(sg, brdf, wo);
+  lo += material.ambient(sg, wo);
   lo += material.emissive(sg);
   out.color = float4(lo, 1.0f);
 

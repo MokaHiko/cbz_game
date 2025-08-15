@@ -32,7 +32,7 @@ function Init()
 	-- Rts View
 	-- position.set(main_camera, 0.0, 10.0, 7.0)
 	-- rotation.set_euler(main_camera, math.rad(-60), 0, 0)
- 
+
 	sun = lights.spawn_directional("Sun")
 	rotation.set_euler(sun, math.rad(-34), math.rad(-76), 0)
 

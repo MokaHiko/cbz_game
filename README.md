@@ -1,6 +1,6 @@
 # CBZ RTS Game
 
-This is the **CBZ RTS** project built on top of the CBZ framework.
+This is the **CBZ TACTICS GAME** project built on top of the CBZ framework.
 
 ## 🛠️ Building the Project
 

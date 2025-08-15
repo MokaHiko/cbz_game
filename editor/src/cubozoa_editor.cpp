@@ -184,6 +184,8 @@ EditorApplication::EditorApplication(const char *name,
                glm::value_ptr(transform.get()), sizeof(float) * 16);
       });
 
+  sBuiltInRenderPipeline =
+      std::make_unique<BuiltInRenderPipeline>(mWidth, mHeight);
 #ifdef CBZ_DEBUG
   sDebugRendererPipeline =
       std::make_unique<DebugRenderPipeline>(sWorld.get(), mWidth, mHeight);
@@ -195,21 +197,22 @@ EditorApplication::EditorApplication(const char *name,
       });
 #endif //  CBZ_DEBUG
 
-  sBuiltInRenderPipeline =
-      std::make_unique<BuiltInRenderPipeline>(mWidth, mHeight);
-
   // Renderables
   sStaticMeshRenderer = std::make_unique<StaticMeshRenderer>();
 
   // TODO: Light environment as ssbo and non static
   static LightSource lightEnv = {};
   static uint32_t lightCount = 1;
+  static Skybox skybox = {};
   sWorld->system_for_each<LightSource>(
       [](LightSource &lightSource) { lightEnv = lightSource; });
 
+  sWorld->system_for_each<Skybox>(
+      [](Skybox &sb) { skybox = sb; });
+
   sWorld->system_for_each<Transform, Primitive>(
       [](Transform &transform, Primitive &primitive) {
-        sStaticMeshRenderer->render(&sCamera, &lightEnv, lightCount, &transform,
+        sStaticMeshRenderer->render(&sCamera, &skybox, &lightEnv, lightCount, &transform,
                                     &primitive);
       });
 

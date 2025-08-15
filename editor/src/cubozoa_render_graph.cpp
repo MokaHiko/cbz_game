@@ -1,5 +1,4 @@
 #include "renderer/cubozoa_render_graph.h"
-#include "cbz_ecs/cbz_ecs_types.h"
 
 #include <cbz_gfx/cbz_gfx.h>
 #include <cbz_gfx/cbz_gfx_imgui.h>
@@ -13,7 +12,6 @@
 #include <glm/trigonometric.hpp>
 
 #include <spdlog/spdlog.h>
-#include <vector>
 
 static std::vector<float> sQuadVertices = {
     // x,   y,     z,   uv
@@ -116,12 +114,18 @@ uint16_t cubeIndices[] = {
     20, 21, 22, 20, 22, 23};
 
 // TODO: Clean up and move to env map resouce
-cbz::ImageHandle hdriIMGH = {CBZ_INVALID_HANDLE};
 cbz::VertexBufferHandle cubeVBH = {CBZ_INVALID_HANDLE};
 cbz::IndexBufferHandle cubeIBH = {CBZ_INVALID_HANDLE};
+
+cbz::ImageHandle hdriIMGH = {CBZ_INVALID_HANDLE};
+
 cbz::ShaderHandle cubeMapSH = {CBZ_INVALID_HANDLE};
-cbz::ImageHandle cubeMapIMGH = {CBZ_INVALID_HANDLE};
 cbz::GraphicsProgramHandle cubeMapGPH = {CBZ_INVALID_HANDLE};
+cbz::ImageHandle cubeMapIMGH = {CBZ_INVALID_HANDLE};
+
+cbz::ShaderHandle irradianceConvolutionSH = {CBZ_INVALID_HANDLE};
+cbz::GraphicsProgramHandle irradianceConvolutionGPH = {CBZ_INVALID_HANDLE};
+cbz::ImageHandle irradianceCubeMapIMGH = {CBZ_INVALID_HANDLE};
 
 cbz::ShaderHandle skyboxSH = {CBZ_INVALID_HANDLE};
 cbz::GraphicsProgramHandle skyboxGPH = {CBZ_INVALID_HANDLE};
@@ -150,8 +154,9 @@ BuiltInRenderPipeline::BuiltInRenderPipeline(uint32_t targetWidth,
   cubeVBH = cbz::VertexBufferCreate(cubeLayout, 25, cubeVertices);
   cubeIBH = cbz::IndexBufferCreate(CBZ_INDEX_FORMAT_UINT16, 36, cubeIndices);
 
+  // --- IBL --- 
+  // Convert HDR Image to cube map
   // TODO: Make asset that checks for nullptr load failure
-  // IBL
   int w, h, channelCount;
   float *stbData = stbi_loadf(ASSET_DIR "/textures/citrus_orchard_road_puresky_4k.hdr",
                               &w, &h, &channelCount, 4);
@@ -208,15 +213,47 @@ BuiltInRenderPipeline::BuiltInRenderPipeline(uint32_t targetWidth,
       cbz::ProjectionSet(glm::value_ptr(captureProjection));
       cbz::ViewSet(glm::value_ptr(captureViews[i]));
 
-      cbz::TextureSet(CBZ_TEXTURE_0, hdriIMGH);
+      cbz::TextureBindingDesc linearTexDesc = {};
+      linearTexDesc.filterMode = CBZ_FILTER_MODE_LINEAR;
+      cbz::TextureSet(CBZ_TEXTURE_0, hdriIMGH, linearTexDesc);
 
 	  cbz::VertexBufferSet(cubeVBH);
 	  cbz::IndexBufferSet(cubeIBH);
       cbz::Submit(RENDER_PASS_TYPE_CAPTURE_0 + i, cubeMapGPH);
   }
 
+  // Convolute and render cube map to irradiance cube map
+  irradianceConvolutionSH = cbz::ShaderCreate("assets/shaders/skybox.wgsl", CBZ_SHADER_WGLSL);
+
+  irradianceConvolutionGPH =
+      cbz::GraphicsProgramCreate(irradianceConvolutionSH);
+
+  irradianceCubeMapIMGH = cbz::Image2DCubeMapCreate(CBZ_TEXTURE_FORMAT_RGBA16FLOAT, 32, 32, 6, CBZ_IMAGE_RENDER_ATTACHMENT);
+
+  for (uint32_t i = 0; i < 6; i++) {
+      // Set to target
+	  cbz::AttachmentDescription faceAttachment = {};
+	  faceAttachment.imgh = irradianceCubeMapIMGH;
+	  faceAttachment.clearValue = {0.0f, 0.0f, 0.0f, 1.0f};
+	  faceAttachment.baseArrayLayer = i;
+	  cbz::RenderTargetSet(RENDER_PASS_TYPE_CAPTURE_0 + 6 + i, &faceAttachment, 1, nullptr);
+
+      // Draw to target
+      cbz::ProjectionSet(glm::value_ptr(captureProjection));
+      cbz::ViewSet(glm::value_ptr(captureViews[i]));
+
+      cbz::TextureBindingDesc textureCubeDesc = {};
+      textureCubeDesc.viewDimension = CBZ_TEXTURE_VIEW_DIMENSION_CUBE;
+      textureCubeDesc.filterMode = CBZ_FILTER_MODE_LINEAR;
+      cbz::TextureSet(CBZ_TEXTURE_0, cubeMapIMGH, textureCubeDesc);
+
+	  cbz::VertexBufferSet(cubeVBH);
+	  cbz::IndexBufferSet(cubeIBH);
+      cbz::Submit(RENDER_PASS_TYPE_CAPTURE_0 + 6 + i, irradianceConvolutionGPH);
+  }
+
   skyboxSH = cbz::ShaderCreate("assets/shaders/skybox.wgsl", CBZ_SHADER_WGLSL);
-  skyboxGPH = cbz::GraphicsProgramCreate(skyboxSH, CBZ_GRAPHICS_PROGRAM_NONE);
+  skyboxGPH = cbz::GraphicsProgramCreate(skyboxSH);
 
   // Flow field visualizer
 #define GRID_X 256
@@ -402,6 +439,8 @@ void BuiltInRenderPipeline::submit(const Camera &camera) {
 
     cbz::TextureBindingDesc textureDesc = {};
     textureDesc.viewDimension = CBZ_TEXTURE_VIEW_DIMENSION_CUBE;
+    textureDesc.addressMode = CBZ_ADDRESS_MODE_CLAMPTOEDGE;
+    textureDesc.filterMode = CBZ_FILTER_MODE_LINEAR;
     cbz::TextureSet(CBZ_TEXTURE_0, cubeMapIMGH, textureDesc);
 
     cbz::TransformSet(glm::value_ptr(matrix));
@@ -583,6 +622,20 @@ DebugRenderPipeline::DebugRenderPipeline(cbz::ecs::IWorld *world, uint32_t w,
   mStencilPickerShader =
       cbz::ShaderCreate("assets/shaders/stencilPicker.wgsl", CBZ_SHADER_WGLSL);
   mStencilPickerProgram = cbz::GraphicsProgramCreate(mStencilPickerShader);
+  // TODO: Move to application
+  static int _ = [this]() { 
+      static cbz::ecs::Entity skyBox = mWorld->instantiate("Skybox");
+	  skyBox.addComponent<Position>();
+	  skyBox.addComponent<Rotation>();
+	  skyBox.addComponent<Scale>();
+	  skyBox.addComponent<Transform>();
+
+	  Skybox& sb = skyBox.addComponent<Skybox>();
+	  sb.irradianceCubeMap = irradianceCubeMapIMGH;
+	  sb.skyboxCubeMap = cubeMapIMGH;
+	  sb.hdriMap = hdriIMGH;
+      return 1;
+  }();
 
   rebuild(w, h);
 }
@@ -651,16 +704,17 @@ void DebugRenderPipeline::findPickables() {
 };
 
 void DebugRenderPipeline::focusEntity(cbz::ecs::Entity e) {
-  // Select root
+  sHighlightEntity = e;
+
+  // Find root level entity
   cbz::ecs::Entity parent = e.getComponent<Transform>().getParent();
   while (parent) {
     e = parent;
     parent = e.getComponent<Transform>().getParent();
   }
 
-  sHighlightEntity = e;
   sFocusedEntity = e;
-  spdlog::info("Clicked on : {}, Selecting {}", e.getId(),
+  spdlog::info("Clicked on : {}, Focusing on {}", sHighlightEntity.getId(),
                sFocusedEntity.getId());
 }
 
@@ -770,8 +824,6 @@ void DebugRenderPipeline::onImGuiRender() {
           if (ImGui::CollapsingHeader("Material", nullptr,
                                       ImGuiTreeNodeFlags_DefaultOpen)) {
             auto avail = ImGui::GetContentRegionAvail();
-            // avail = {250, 250};
-
             cbz::imgui::Image(p.materialRef.albedoTexture.imgh,
                               {avail.x, avail.x});
             cbz::imgui::Image(p.materialRef.metallicRoughnessTexture.imgh,
@@ -834,6 +886,15 @@ void DebugRenderPipeline::onImGuiRender() {
             }
           }
         }
+
+        if (sFocusedEntity.hasComponent<Skybox>()) {
+          if (ImGui::CollapsingHeader("Skybox", nullptr,
+                                      ImGuiTreeNodeFlags_DefaultOpen)) {
+            const Skybox &skybox = sFocusedEntity.getComponent<Skybox>();
+            auto avail = ImGui::GetContentRegionAvail();
+            cbz::imgui::Image(skybox.hdriMap, {avail.x, avail.x});
+          }
+        }
       }
     }
   }
@@ -841,7 +902,7 @@ void DebugRenderPipeline::onImGuiRender() {
 }
 
 void DebugRenderPipeline::rebuild(uint32_t w, uint32_t h) {
-  // --- Pick pass setup ---
+  // Pick pass setup 
   sPickingTexelBufferW = w;
   sPickingTexelBufferH = h;
 

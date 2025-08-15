@@ -107,4 +107,10 @@ struct Camera {
   cbz::UniformHandle uh;
 };
 
+struct Skybox {
+    cbz::ImageHandle skyboxCubeMap;
+    cbz::ImageHandle irradianceCubeMap;
+    cbz::ImageHandle hdriMap;
+};
+
 #endif // RENDERER_TYPES_H_

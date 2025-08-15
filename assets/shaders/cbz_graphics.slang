@@ -79,7 +79,7 @@ public interface IMaterial {
   public SurfaceGeometry prepare_geometry(SurfaceGeometry sg);
 
   public float3 emissive(SurfaceGeometry sg);
-  public float3 ambient(SurfaceGeometry sg);
+  public float3 ambient(SurfaceGeometry sg, float3 wo);
 };
 
 // A light, or an entire lighting *environment* is an object

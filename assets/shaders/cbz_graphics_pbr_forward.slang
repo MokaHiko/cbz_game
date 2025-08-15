@@ -21,6 +21,9 @@ cbz::SampledTexture occlusion_map;
 [vk_binding(cbz::TEXTURE4)]
 cbz::SampledTexture emissive_map;
 
+[vk_binding(cbz::TEXTURE5)]
+cbz::SampledTextureCube irradiance_map;
+
 // --- PBR ---
 public struct CookTorrenceBRDF : IBRDF {
   public float3 albedo;
@@ -53,6 +56,10 @@ public struct CookTorrenceBRDF : IBRDF {
 
   float3 fresnel_schlick(float cos_theta, float3 f0) {
     return f0 + (1.0 - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
+  }
+
+  public float3 fresnel_schlick_roughness(float cos_theta, float3 f0, float roughness) {
+    return f0 + (max(float3(1.0 - roughness), f0) - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
   }
 
   float distribution_GGX(float3 N, float3 H, float roughness) {
@@ -122,10 +129,25 @@ public struct ULitMaterial : cbz::IMaterial {
     return emissive_map.sample(sg.uv).rgb * emissive_factor * emissive_strength;
   }
 
-  public float3 ambient(cbz::SurfaceGeometry sg) {
-    // Ambient & AO lighting
+  public float3 ambient(cbz::SurfaceGeometry sg, float3 wo) {
+    float3 ambientAlbedo = albedo.sample(sg.uv).rgb;
+    ambientAlbedo *= albedo_factor;
+ 
+    float ambientRoughness = metallic_roughness_map.sample(sg.uv).g;
+
+    float3 f0 = float3(0.04, 0.04, 0.04);
+    float3 ks = fresnel_schlick_roughness(max(dot(sg.normal, wo), 0.0), f0, ambientRoughness);
+    float3 kd = 1.0f - ks;
+    float3 irradiance = irradiance_map.sample(sg.normal).rgb;
+
+    float3 diffuse = irradiance * ambientAlbedo;
     float ao = occlusion_map.sample(sg.uv).r * ao_factor;
-    return mul(float3(0.03), albedo.sample(sg.uv).rgb) * ao;
+
+    return kd * diffuse * ao;
+  }
+
+  private float3 fresnel_schlick_roughness(float cos_theta, float3 f0, float roughness) {
+    return f0 + (max(float3(1.0 - roughness), f0) - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
   }
 };
 
