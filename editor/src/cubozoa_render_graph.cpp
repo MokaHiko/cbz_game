@@ -264,7 +264,7 @@ BuiltInRenderPipeline::BuiltInRenderPipeline(uint32_t targetWidth,
 
 BuiltInRenderPipeline::~BuiltInRenderPipeline() { destroyAttachments(); }
 
-void BuiltInRenderPipeline::configure(RenderPipeline &_) {}
+void BuiltInRenderPipeline::configure([[maybe_unused]] RenderPipeline &_) {}
 
 void BuiltInRenderPipeline::destroyAttachments() {
   // Destroy blit resources
@@ -544,7 +544,7 @@ void DebugRenderPipeline::findPickables() {
   mVisible.clear();
 
   mWorld->query<cbz::ecs::Entity, Primitive>(
-      [](cbz::ecs::Entity e, const Primitive &_) {
+      [](cbz::ecs::Entity e, [[maybe_unused]] const Primitive &_) {
         mVisible.push_back(e.getId());
       });
 

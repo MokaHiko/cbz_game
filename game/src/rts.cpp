@@ -16,7 +16,7 @@ void Init() {
 
   // Movement
   sWorld->system_for_each<Position, Unit, UnitMoveState>(
-      [](Position &position, Unit &_, UnitMoveState &moveState) {
+      [](Position &position, [[maybe_unused]] Unit &_, UnitMoveState &moveState) {
         if (!moveState.isMoving) {
           return;
         }
@@ -184,7 +184,7 @@ void FlowFieldCreate(const int *integrationField, IVec2 center,
   }
 }
 
-unitId Spawn(UnitAssetId _, Position dst) {
+unitId Spawn([[maybe_unused]] UnitAssetId _, Position dst) {
   cbz::ecs::Entity e = sWorld->instantiate();
   e.addComponent<Position>(dst);
   e.addComponent<Rotation>();
