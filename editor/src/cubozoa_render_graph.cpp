@@ -160,6 +160,8 @@ BuiltInRenderPipeline::BuiltInRenderPipeline(uint32_t targetWidth,
   int w, h, channelCount;
   float *stbData = stbi_loadf(ASSET_DIR "/textures/citrus_orchard_road_puresky_4k.hdr",
                               &w, &h, &channelCount, 4);
+  //float *stbData = stbi_loadf(ASSET_DIR "/textures/warm_bar_4k.hdr",
+  //                            &w, &h, &channelCount, 4);
   channelCount = 4;
 
   spdlog::trace(" - w: {} h: {} channels : {}", w, h, channelCount);

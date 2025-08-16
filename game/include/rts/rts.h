@@ -59,17 +59,31 @@ struct CBZ_API CellPosition {
   uint8_t z;
 };
 
+#define GRID_X 256
+#define GRID_Y 256
+
 // --- Simulation Functions ---
 CBZ_API void Init();
 CBZ_API void Step();
 CBZ_API void Shutdown();
 
 // --- Unit Functions ---
-CBZ_API [[nodiscard]] unitId Spawn(UnitAssetId unitAssetId, Position dst);
+CBZ_API CBZ_NO_DISCARD unitId Spawn(UnitAssetId unitAssetId, Position dst);
 CBZ_API void MoveTo(unitId unit, Position dst);
 CBZ_API void Attack(unitId attacker, unitId target);
 
+struct CBZ_API Vec2 {
+  float x;
+  float y;
+};
+
+struct CBZ_API IVec2 {
+  int x;
+  int y;
+};
+
 // --- Util ---
+CBZ_API void FlowFieldCreate(IVec2 center, int searchRadius, Vec2* out);
 
 }; // namespace rts
 
