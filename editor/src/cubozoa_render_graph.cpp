@@ -389,7 +389,7 @@ BuiltInRenderPipeline::BuiltInRenderPipeline(uint32_t targetWidth,
 
 BuiltInRenderPipeline::~BuiltInRenderPipeline() { destroyAttachments(); }
 
-void BuiltInRenderPipeline::configure(RenderPipeline &_) {}
+void BuiltInRenderPipeline::configure([[maybe_unused]] RenderPipeline &_) {}
 
 void BuiltInRenderPipeline::destroyAttachments() {
   // Destroy blit resources
@@ -625,7 +625,7 @@ DebugRenderPipeline::DebugRenderPipeline(cbz::ecs::IWorld *world, uint32_t w,
       cbz::ShaderCreate("assets/shaders/stencilPicker.wgsl", CBZ_SHADER_WGLSL);
   mStencilPickerProgram = cbz::GraphicsProgramCreate(mStencilPickerShader);
   // TODO: Move to application
-  static int _ = [this]() { 
+  [[maybe_unused]] static int _ = [this]() { 
       static cbz::ecs::Entity skyBox = mWorld->instantiate("Skybox");
 	  skyBox.addComponent<Position>();
 	  skyBox.addComponent<Rotation>();
@@ -661,7 +661,7 @@ void DebugRenderPipeline::findPickables() {
   mVisible.clear();
 
   mWorld->query<cbz::ecs::Entity, Primitive>(
-      [](cbz::ecs::Entity e, const Primitive &_) {
+      [](cbz::ecs::Entity e, [[maybe_unused]] const Primitive &_) {
         mVisible.push_back(e.getId());
      });
 

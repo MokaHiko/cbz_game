@@ -3,6 +3,9 @@ project(cubozoa_game VERSION 0.1.0 LANGUAGES CXX C)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# TODO: (jacob): Probably only want this for shared builds
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 # Engine 
 add_subdirectory(cbz)
 add_subdirectory(cbz_gfx)

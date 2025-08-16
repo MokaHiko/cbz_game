@@ -14,7 +14,7 @@ void Init() {
 
   // Movement
   sWorld->system_for_each<Position, Unit, UnitMoveState>(
-      [](Position &position, Unit &_, UnitMoveState &moveState) {
+      [](Position &position, [[maybe_unused]] Unit &_, UnitMoveState &moveState) {
         if (!moveState.isMoving) {
           return;
         }
@@ -123,7 +123,7 @@ void FlowFieldCreate(IVec2 center, int searchRadius, Vec2* out) {
           cellIdx + gridDimensions.x  // bottom
       };
 
-      bool skipNeighbor[] = {false, false, false, false};
+      [[maybe_unused]] bool skipNeighbor[] = {false, false, false, false};
 
       constexpr Vec2 neighborDirections[] = {
           { 0.0f,  1.0f},  // right
@@ -160,7 +160,7 @@ void FlowFieldCreate(IVec2 center, int searchRadius, Vec2* out) {
   }
 }
 
-unitId Spawn(UnitAssetId _, Position dst) {
+unitId Spawn([[maybe_unused]] UnitAssetId _, Position dst) {
   cbz::ecs::Entity e = sWorld->instantiate();
   e.addComponent<Position>(dst);
   e.addComponent<Rotation>();

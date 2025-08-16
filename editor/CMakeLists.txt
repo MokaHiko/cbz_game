@@ -45,8 +45,14 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
     CXX_STANDARD 17
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF
-    COMPILE_WARNING_AS_ERROR ON
 )
+
+if (NOT CBZ_LINUX)
+  # GCC is very unhappy with Sean Barret
+  set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_WARNING_AS_ERROR OFF)
+else()
+  set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_WARNING_AS_ERROR ON)
+endif()
 
 if (MSVC)
     if(CBZ_BUILD_SHARED)
