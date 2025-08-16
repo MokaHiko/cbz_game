@@ -1,3 +1,5 @@
+#include "cbz_gfx/cbz_gfx_defines.h"
+#include "imgui.h"
 #include "renderer/cubozoa_gltf.h"
 #include "renderer/cubozoa_render_graph.h"
 #include "renderer/cubozoa_render_types.h"
@@ -8,6 +10,7 @@
 #include <cbz_gfx/cbz_gfx_imgui.h>
 
 #include <cbz_ecs/cbz_ecs_types.h>
+#include <cstdint>
 
 // TODO: Make into plug-in system
 #define SOL_ALL_SAFETIES_ON 1
@@ -25,9 +28,6 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-// --- Game ---
-#include <rts/rts.h>
-
 static constexpr uint32_t mWidth = 1920;
 static constexpr uint32_t mHeight = 1080;
 
@@ -40,10 +40,10 @@ static uint32_t sFrameCtr;
 static Camera sCamera;
 
 // Level assets
-// static std::vector<std::unique_ptr<Asset<LuaScript>>> sScripts;
 static std::vector<std::unique_ptr<Asset<Gltf>>> sGltfs;
 static std::unique_ptr<cbz::ecs::IWorld> sWorld;
 static std::unique_ptr<AssetManager> sAssetManager;
+// static std::vector<std::unique_ptr<Asset<LuaScript>>> sScripts;
 
 // SOL LUA
 static sol::state sLua;
@@ -53,10 +53,48 @@ static std::unique_ptr<DebugRenderPipeline> sDebugRendererPipeline;
 static std::unique_ptr<BuiltInRenderPipeline> sBuiltInRenderPipeline;
 static std::unique_ptr<StaticMeshRenderer> sStaticMeshRenderer;
 
-// For ImGUI
+// --- Game ---
+#include <rts/rts.h>
+
+static std::vector<float> sQuadVertices = {
+    // x,   y,   z,    uv
+    -1.0f, 0.0f, 1.0f,  0.0f, 0.0f, // Vertex 1
+    1.0f,  0.0f, 1.0f,  1.0f, 0.0f, // Vertex 2
+    1.0f,  0.0f, -1.0f, 1.0f, 1.0f, // Vertex 4
+    -1.0f, 0.0f, -1.0f, 0.0f, 1.0f, // Vertex 3
+};
+
+static std::vector<uint16_t> sQuadIndices = {
+    0, 1, 2, // Triangle #0 connects points #0, #1 and #2
+    0, 2, 3  // Triangle #1 connects points #0, #2 and #3
+};
+
+// Flow field
+cbz::ImageHandle costFieldTexture = {CBZ_INVALID_HANDLE};
+cbz::ImageHandle integrationFieldTexture = {CBZ_INVALID_HANDLE};
+cbz::ImageHandle flowFieldTexture = {CBZ_INVALID_HANDLE};
+rts::IVec2 flowFieldTarget = {GRID_X / 2, GRID_Y / 2};
+
+cbz::ShaderHandle flowFieldShader = {CBZ_INVALID_HANDLE};
+cbz::GraphicsProgramHandle flowFieldProgram = {CBZ_INVALID_HANDLE};
+cbz::VertexBufferHandle QuadVBH = {CBZ_INVALID_HANDLE};
+cbz::IndexBufferHandle QuadIBH = {CBZ_INVALID_HANDLE};
+
 static void OnImGuiRender() {
   sBuiltInRenderPipeline->onImGuiRender();
   sDebugRendererPipeline->onImGuiRender();
+
+  ImGui::Begin("Flow field");
+  ImGui::Text("Grid %d bu %d", GRID_X, GRID_Y);
+  ImGui::DragInt2("Target", &flowFieldTarget.x, 1.0f, 0, GRID_X);
+  ImVec2 avail = ImGui::GetContentRegionAvail();
+  float width = avail.x / 3.0f;
+  cbz::imgui::Image(costFieldTexture, ImVec2(width, avail.y));
+  ImGui::SameLine();
+  cbz::imgui::Image(integrationFieldTexture, ImVec2(width, avail.y));
+  ImGui::SameLine();
+  cbz::imgui::Image(flowFieldTexture, ImVec2(width, avail.y));
+  ImGui::End();
 }
 
 namespace cbz {
@@ -207,13 +245,12 @@ EditorApplication::EditorApplication(const char *name,
   sWorld->system_for_each<LightSource>(
       [](LightSource &lightSource) { lightEnv = lightSource; });
 
-  sWorld->system_for_each<Skybox>(
-      [](Skybox &sb) { skybox = sb; });
+  sWorld->system_for_each<Skybox>([](Skybox &sb) { skybox = sb; });
 
   sWorld->system_for_each<Transform, Primitive>(
       [](Transform &transform, Primitive &primitive) {
-        sStaticMeshRenderer->render(&sCamera, &skybox, &lightEnv, lightCount, &transform,
-                                    &primitive);
+        sStaticMeshRenderer->render(&sCamera, &skybox, &lightEnv, lightCount,
+                                    &transform, &primitive);
       });
 
   // RenderPipeline submission
@@ -410,16 +447,66 @@ EditorApplication::EditorApplication(const char *name,
     exit(0); // TODO: Recover
   }
 
-  // --- Game Systems ---
+  // --- Game ---
   rts::Init();
-  // TODO: Handle in network thread
-  //rts::unitId soldier = rts::Spawn(UnitAssetId{}, {10, 10});
-  //rts::MoveTo(soldier, {15, 15});
+
+  // TODO: Clean up and destroy
+  costFieldTexture = cbz::Image2DCreate(CBZ_TEXTURE_FORMAT_RGBA8UNORM,
+                                        static_cast<uint32_t>(GRID_X),
+                                        static_cast<uint32_t>(GRID_Y));
+
+  integrationFieldTexture = cbz::Image2DCreate(CBZ_TEXTURE_FORMAT_RGBA8UNORM,
+                                               static_cast<uint32_t>(GRID_X),
+                                               static_cast<uint32_t>(GRID_Y));
+
+  flowFieldTexture = cbz::Image2DCreate(CBZ_TEXTURE_FORMAT_RGBA8UNORM,
+                                        static_cast<uint32_t>(GRID_X),
+                                        static_cast<uint32_t>(GRID_Y));
+
+  flowFieldShader =
+      cbz::ShaderCreate("assets/shaders/flow_field.wgsl", CBZ_SHADER_WGLSL);
+  cbz::ShaderSetName(flowFieldShader, "flow_field", strlen("flow_field"));
+  flowFieldProgram = cbz::GraphicsProgramCreate(flowFieldShader);
+  cbz::GraphicsProgramSetName(flowFieldProgram, "flow_program",
+                              strlen("flow_program"));
+
+  cbz::VertexLayout quadVL = {};
+  quadVL.begin(CBZ_VERTEX_STEP_MODE_VERTEX);
+  quadVL.push_attribute(CBZ_VERTEX_ATTRIBUTE_POSITION,
+                        CBZ_VERTEX_FORMAT_FLOAT32X3);
+  quadVL.push_attribute(CBZ_VERTEX_ATTRIBUTE_TEXCOORD0,
+                        CBZ_VERTEX_FORMAT_FLOAT32X2);
+  quadVL.end();
+
+  QuadVBH = cbz::VertexBufferCreate(quadVL, 4, sQuadVertices.data());
+  QuadIBH =
+      cbz::IndexBufferCreate(CBZ_INDEX_FORMAT_UINT16, 6, sQuadIndices.data());
+
+  cbz::ecs::Entity flowField = instantiate();
+  flowField.setName("flowField");
+  Primitive &primitive = flowField.addComponent<Primitive>();
+  primitive.vbh = QuadVBH;
+  primitive.ibh = QuadIBH;
+  primitive.materialRef.textureCount = 1;
+  primitive.materialRef.ph = flowFieldProgram;
+  primitive.materialRef.textures[MATERIAL_TEXTURE_PRIMARY] = {
+      NULL, integrationFieldTexture};
 }
 
 EditorApplication::~EditorApplication() {
-  rts::Shutdown();
+  // --- Game ---
+  cbz::ShaderDestroy(flowFieldShader);
+  cbz::GraphicsProgramDestroy(flowFieldProgram);
 
+  cbz::VertexBufferDestroy(QuadVBH);
+  cbz::IndexBufferDestroy(QuadIBH);
+
+  cbz::ImageDestroy(flowFieldTexture);
+  cbz::ImageDestroy(integrationFieldTexture);
+  cbz::ImageDestroy(costFieldTexture);
+
+  // Clean up
+  rts::Shutdown();
   cbz::Shutdown();
   sDeltaTime = 0;
 }
@@ -484,10 +571,9 @@ void EditorApplication::update() {
   sDebugRendererPipeline->findPickables();
   if (cbz::IsMouseButtonPressed(cbz::MouseButton::eLeft)) {
     MousePosition mousePos = cbz::GetMousePosition();
-    cbz::ecs::EntityId eId =
-    sDebugRendererPipeline->getEntityAtMousePosition(
+    cbz::ecs::EntityId eId = sDebugRendererPipeline->getEntityAtMousePosition(
         mousePos.x, mousePos.y);
-  
+
     // TODO: Set invalid id as clear value instead of hard coded.
     if (eId != 16777216) {
       sDebugRendererPipeline->focusEntity({eId, sWorld.get()});
@@ -496,6 +582,80 @@ void EditorApplication::update() {
 
   // Update game systems
   sWorld->step(sDeltaTime);
+
+  // -- GAME --
+
+  // Visualize flow field
+  if (cbz::IsMouseButtonPressed(cbz::MouseButton::eRight)) {
+    const glm::ivec2 gridDimensions(GRID_X, GRID_Y);
+    const int dstIdx = flowFieldTarget.y * gridDimensions.x + flowFieldTarget.x;
+
+    int maxCost = GRID_X;
+
+    // TODO: Each field as colors
+
+    // Create Generate map
+    std::vector<int> costField(GRID_X * GRID_Y);
+    for (int i = 0; i < GRID_X * GRID_Y; i++) {
+      costField[i] = 1;
+    }
+    costField[dstIdx] = 0;
+
+    std::vector<cbz::ColorRGBA> costFieldColors(GRID_X * GRID_Y);
+    for (int i = 0; i < GRID_X * GRID_Y; i++) {
+      float t = costField[i] / static_cast<float>(maxCost);
+      costFieldColors[i].r = static_cast<uint8_t>(std::ceil(t * 255.0f));
+      costFieldColors[i].g = 255 - costFieldColors[i].r;
+      costFieldColors[i].b = 0;
+      costFieldColors[i].a = 255;
+
+      if (i == dstIdx) {
+        costFieldColors[i] = {0, 0, 255, 255};
+      }
+    }
+
+    cbz::Image2DUpdate(costFieldTexture, costFieldColors.data(),
+                       GRID_X * GRID_Y);
+
+    // Create Integration field
+    std::vector<cbz::ColorRGBA> integrationFieldColors(GRID_X * GRID_Y);
+    std::vector<int> integrationField(GRID_X * GRID_Y);
+    rts::IntegrationFieldCreate(costField.data(), flowFieldTarget, GRID_X,
+                                integrationField.data());
+    for (int i = 0; i < GRID_X * GRID_Y; i++) {
+      float t = integrationField[i] / static_cast<float>(maxCost);
+      integrationFieldColors[i].r = static_cast<uint8_t>(std::ceil(t * 255.0f));
+      integrationFieldColors[i].g = 255 - integrationFieldColors[i].r;
+      integrationFieldColors[i].b = 0;
+      integrationFieldColors[i].a = 255;
+
+      if (i == dstIdx) {
+        integrationFieldColors[i] = {0, 0, 255, 255};
+      }
+    }
+    cbz::Image2DUpdate(integrationFieldTexture, integrationFieldColors.data(),
+                       GRID_X * GRID_Y);
+
+    // Create flow field
+    std::vector<cbz::ColorRGBA> flowFieldColors(GRID_X * GRID_Y);
+    std::vector<rts::Vec2> flowField(GRID_X * GRID_Y);
+    rts::FlowFieldCreate(integrationField.data(), flowFieldTarget, GRID_X,
+                         flowField.data());
+
+    for (int i = 0; i < GRID_X * GRID_Y; i++) {
+      flowFieldColors[i].r = (flowField[i].x * 0.5f + 1.0f) * 255;
+      flowFieldColors[i].g = (flowField[i].y * 0.5f + 1.0f) * 255;
+      flowFieldColors[i].b = 0;
+      flowFieldColors[i].a = 255;
+
+      if (i == dstIdx) {
+        flowFieldColors[i] = {0, 0, 255, 255};
+      }
+    }
+
+    cbz::Image2DUpdate(flowFieldTexture, flowFieldColors.data(),
+                       GRID_X * GRID_Y);
+  }
 
   // Draw
   sFrameCtr = cbz::Frame();

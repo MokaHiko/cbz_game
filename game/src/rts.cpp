@@ -1,4 +1,6 @@
 #include "rts/rts.h"
+#include "spdlog/spdlog.h"
+#include <limits>
 
 #define CBZ_ECS_IMPLEMENTATION
 #include <cbz_ecs/cbz_ecs.h>
@@ -25,20 +27,16 @@ void Init() {
         position.x += 5.0f * 0.001;
       });
 }
-//lowFieldCreate(int centerX, int centerY, int s, uint8_t out) {
-void FlowFieldCreate(IVec2 center, int searchRadius, Vec2* out) {
+
+void IntegrationFieldCreate(const int *costField, IVec2 center,
+                            [[maybe_unused]] int searchRadius,
+                            int *integrationField) {
   const glm::ivec2 gridDimensions(GRID_X, GRID_Y);
   const int dstIdx = center.y * gridDimensions.x + center.x;
 
-  std::vector<uint8_t> costField(GRID_X * GRID_Y);
   for (int i = 0; i < GRID_X * GRID_Y; i++) {
-    costField[i] = 1;
+    integrationField[i] = std::numeric_limits<int>::max();
   }
-
-  costField[dstIdx] = 0;
-
-  std::vector<uint8_t> integrationField(GRID_X * GRID_Y);
-  std::fill(integrationField.begin(), integrationField.end(), 255);
   integrationField[dstIdx] = 0;
 
   std::vector<bool> seenList(GRID_X * GRID_Y);
@@ -50,92 +48,118 @@ void FlowFieldCreate(IVec2 center, int searchRadius, Vec2* out) {
   int openListTail = 0;
   int openListHead = 1;
 
-  // DFS cost
+  // BFS cost
   openList[0] = dstIdx;
   seenList[dstIdx] = true;
 
   while (openListTail < openListHead) {
     int cellIdx = openList[openListTail++];
 
-    int neighbors[] = {
-        cellIdx + 1,                // right
-        cellIdx - 1,                // left
-        cellIdx - gridDimensions.x, // top
-        cellIdx + gridDimensions.x  // bottom
+    int neighbors[8] = {
+        cellIdx + 1,                    // right
+        cellIdx - 1,                    // left
+        cellIdx - gridDimensions.x,     // top
+        cellIdx + gridDimensions.x,     // bottom
+        cellIdx - gridDimensions.x + 1, // top right
+        cellIdx - gridDimensions.x - 1, // top left
+        cellIdx + gridDimensions.x + 1, // bottom right
+        cellIdx + gridDimensions.x - 1, // bottom left
     };
 
-    bool skipNeighbor[] = {false, false, false, false};
-
-    // Checked neighbors
-    for (int directionIdx = 0; directionIdx < 4; directionIdx++) {
+    // Add newly seen neighbors to list
+    for (int directionIdx = 0; directionIdx < 8; directionIdx++) {
       int neighborCellIdx = neighbors[directionIdx];
 
       // Skip if out of bounds
       if (neighborCellIdx < 0 ||
           neighborCellIdx >= (gridDimensions.x * gridDimensions.y)) {
-        skipNeighbor[directionIdx] = true;
         continue;
       }
 
       // Skip if out of bounds
       if (neighborCellIdx >= gridDimensions.x * gridDimensions.y) {
-        skipNeighbor[directionIdx] = true;
         continue;
       }
 
       // Skip seen neighbors
       if (seenList[neighborCellIdx]) {
-        skipNeighbor[directionIdx] = true;
         continue;
       }
-    }
 
-    // Add newly seen neighbors to list
-    for (int directionIdx = 0; directionIdx < 4; directionIdx++) {
-      if (!skipNeighbor[directionIdx]) {
-        openList[openListHead] = neighbors[directionIdx];
-        openListHead++;
+      // Add neighbor to open list
+      openList[openListHead] = neighborCellIdx;
+      openListHead++;
 
-        // Mark neighbor cell as seen
-        seenList[neighbors[directionIdx]] = true;
+      // Mark neighbor cell as seen
+      seenList[neighborCellIdx] = true;
 
-        // Accumulate min costs
-        uint8_t newCost =
-            integrationField[cellIdx] + costField[neighbors[directionIdx]];
-        if (newCost < integrationField[neighbors[directionIdx]]) {
-          integrationField[neighbors[directionIdx]] = newCost;
-          if (newCost == 0 && cellIdx != dstIdx) {
-            spdlog::error("{} 0 cost despite not being {}", cellIdx, dstIdx);
-          }
-        }
+      // Accumulate min costs
+      int newCost = integrationField[cellIdx] + costField[neighborCellIdx];
+      if (newCost >= integrationField[neighborCellIdx]) {
+        continue;
+      }
+
+      // Debug Checks
+      if (integrationField[cellIdx] == std::numeric_limits<int>::max()) {
+        spdlog::error("Out of order access!");
+      }
+      if (integrationField[neighborCellIdx] != 0 &&
+          integrationField[neighborCellIdx] !=
+              std::numeric_limits<int>::max()) {
+        spdlog::error("neighbor {} {}", neighborCellIdx, dstIdx);
+      }
+
+      integrationField[neighborCellIdx] = newCost;
+
+      if (newCost == 0 && neighborCellIdx != dstIdx) {
+        spdlog::error("{} has 0 cost despite not being {}", neighborCellIdx,
+                      dstIdx);
       }
     }
   }
+}
 
-  for (int y = 0; y < searchRadius; y++) {
-    for (int x = 0; x < searchRadius; x++) {
-      int cellIdx = y * searchRadius + x;
+void FlowFieldCreate(const int *integrationField, IVec2 center,
+                     [[maybe_unused]] int searchRadius, Vec2 *out) {
+  const glm::ivec2 gridDimensions(GRID_X, GRID_Y);
+  const int dstIdx = center.y * gridDimensions.x + center.x;
 
-      int neighbors[] = {
-          cellIdx + 1,                // right
-          cellIdx - 1,                // left
-          cellIdx - gridDimensions.x, // top
-          cellIdx + gridDimensions.x  // bottom
+  std::vector<int> costField(GRID_X * GRID_Y);
+  for (int i = 0; i < GRID_X * GRID_Y; i++) {
+    costField[i] = 1;
+  }
+  costField[dstIdx] = 0;
+
+  for (int y = 0; y < GRID_Y; y++) {
+    for (int x = 0; x < GRID_X; x++) {
+      int cellIdx = y * GRID_X + x;
+
+      int neighbors[8] = {
+          cellIdx + 1,                    // right
+          cellIdx - 1,                    // left
+          cellIdx - gridDimensions.x,     // top
+          cellIdx + gridDimensions.x,     // bottom
+          cellIdx - gridDimensions.x + 1, // top right
+          cellIdx - gridDimensions.x - 1, // top left
+          cellIdx + gridDimensions.x + 1, // bottom right
+          cellIdx + gridDimensions.x - 1, // bottom left
       };
 
-      [[maybe_unused]] bool skipNeighbor[] = {false, false, false, false};
-
       constexpr Vec2 neighborDirections[] = {
-          { 0.0f,  1.0f},  // right
-          { 0.0f, -1.0f},  // left
-          { 1.0f,  0.0f},  // top
-          {-1.0f,  0.0f},  // bottom
+          {1.0f, 0.0f},   // right
+          {-1.0f, 0.0f},  // left
+          {0.0f, 1.0f},   // top
+          {0.0f, -1.0f},  // bottom
+          {1.0f, 1.0f},   // top right
+          {-1.0f, 1.0f},  // top left
+          {1.0f, -1.0f},  // bottom right
+          {-1.0f, -1.0f}, // bottom left
       };
 
       // Checked neighbors for least
       Vec2 minCostNeighborDirection = {0.0f, 0.0f};
-	  int minCost = std::numeric_limits<int>::max();
-      for (int directionIdx = 0; directionIdx < 4; directionIdx++) {
+      int minCost = std::numeric_limits<int>::max();
+      for (int directionIdx = 0; directionIdx < 8; directionIdx++) {
         int neighborCellIdx = neighbors[directionIdx];
 
         // Skip if out of bounds left

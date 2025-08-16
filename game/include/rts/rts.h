@@ -83,7 +83,11 @@ struct CBZ_API IVec2 {
 };
 
 // --- Util ---
-CBZ_API void FlowFieldCreate(IVec2 center, int searchRadius, Vec2* out);
+CBZ_API void FlowFieldCreate(const int *integrationField, IVec2 center,
+                             int searchRadius, Vec2 *out);
+
+CBZ_API void IntegrationFieldCreate(const int *costField, IVec2 center,
+                                    int searchRadius, int *integrationField);
 
 }; // namespace rts
 

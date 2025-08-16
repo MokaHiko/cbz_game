@@ -26,21 +26,29 @@ struct MaterialPBRUniformData {
 
 class MaterialPBRAsset;
 
+typedef enum : uint8_t {
+  MATERIAL_TEXTURE_PRIMARY = 0,
+  MATERIAL_TEXTURE_MAX = 5,
+} MaterialTextures;
+
+typedef enum : uint32_t {
+  MATERIAL_PBR_TEXTURE_ALBEDO = 0,
+  MATERIAL_PBR_TEXTURE_METALLIC_ROUGHNESS,
+  MATERIAL_PBR_TEXTURE_NORMAL,
+  MATERIAL_PBR_TEXTURE_OCCLUSION,
+  MATERIAL_PBR_TEXTURE_EMISSIVE,
+  MATERIAL_PBR_TEXTURE_COUNT,
+} MaterialPBRTextures;
+
 // @brief A reference to a 'PrimitiveAsset'
-struct MaterialPBR {
-  // Uniform
+struct Material {
+  TextureRef textures[MATERIAL_TEXTURE_MAX];
+  uint8_t textureCount;
+
   MaterialPBRUniformData uData;
   cbz::UniformHandle uh;
 
-  // PBR
-  TextureRef albedoTexture;
-  TextureRef metallicRoughnessTexture;
-
-  // Material
-  TextureRef normalTexture;
-  TextureRef occlusionTexture;
-
-  TextureRef emissiveTexture;
+  cbz::GraphicsProgramHandle ph;
   MaterialPBRAsset *asset;
 };
 
@@ -51,7 +59,7 @@ struct Primitive {
   cbz::VertexBufferHandle vbh;
   cbz::IndexBufferHandle ibh;
 
-  MaterialPBR materialRef;
+  Material materialRef;
   PrimitiveAsset *asset;
 };
 
@@ -108,9 +116,9 @@ struct Camera {
 };
 
 struct Skybox {
-    cbz::ImageHandle skyboxCubeMap;
-    cbz::ImageHandle irradianceCubeMap;
-    cbz::ImageHandle hdriMap;
+  cbz::ImageHandle skyboxCubeMap;
+  cbz::ImageHandle irradianceCubeMap;
+  cbz::ImageHandle hdriMap;
 };
 
 #endif // RENDERER_TYPES_H_

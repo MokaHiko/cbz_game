@@ -32,7 +32,7 @@ if(WIN32)
 elseif(APPLE)
     target_compile_definitions(${PROJECT_NAME} PRIVATE SOL_COMPILER_CLANG)
     target_include_directories(${PROJECT_NAME} PRIVATE third_party/lua548/src)
-    target_link_directories(${PROJECT_NAME} PRIVATE third_party/lua548/src/macos)
+    target_link_directories(${PROJECT_NAME} PRIVATE third_party/lua548/bin/macos-aarch64/)
 elseif(UNIX)
     # TODO: Add lua support for Linux
     target_compile_definitions(${PROJECT_NAME} PUBLIC CBZ_LINUX)

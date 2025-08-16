@@ -12,12 +12,11 @@ public:
   StaticMeshRenderer();
   ~StaticMeshRenderer();
 
-  void render(const Camera *camera, const Skybox* skybox, const LightSource *lightSources,
-              uint32_t count, Transform *transform, Primitive *mesh);
+  void render(const Camera *camera, const Skybox *skybox,
+              const LightSource *lightSources, uint32_t count,
+              Transform *transform, Primitive *mesh);
 
 private:
-  cbz::ShaderHandle mPBRForwardShader;
-  cbz::GraphicsProgramHandle mPBRForwardProgram;
   cbz::ShaderHandle mGBufferShader;
   cbz::GraphicsProgramHandle mGBufferProgram;
 };
@@ -34,6 +33,8 @@ GltfAssetCreate(const std::string &path);
 EntityCreateFromGltf(cbz::ecs::IWorld *world, Asset<Gltf> *asset);
 
 typedef uint32_t MaterialHandle;
+typedef uint32_t PrimitiveHandle;
+typedef uint32_t GltfHandle;
 
 #include <sol/sol.hpp>
 
@@ -45,6 +46,7 @@ public:
   ~AssetManager();
 
   [[nodiscard]] MaterialHandle loadMaterial(const std::string &path);
+
   [[nodiscard]] TextureRef loadTexture(const std::string &path,
                                        CBZTextureFormat format);
 

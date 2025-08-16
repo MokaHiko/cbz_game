@@ -13,7 +13,7 @@
 
 #include <spdlog/spdlog.h>
 
-static std::vector<float> sQuadVertices = {
+static std::vector<float> sFSQuadVertices = {
     // x,   y,     z,   uv
     -1.0f, 1.0f,  0.0f, 0.0f, 0.0f, // Vertex 1
     1.0f,  1.0f,  0.0f, 1.0f, 0.0f, // Vertex 2
@@ -21,7 +21,7 @@ static std::vector<float> sQuadVertices = {
     -1.0f, -1.0f, 0.0f, 0.0f, 1.0f, // Vertex 3
 };
 
-static std::vector<uint16_t> sQuadIndices = {
+static std::vector<uint16_t> sFSQuadIndices = {
     0, 1, 2, // Triangle #0 connects points #0, #1 and #2
     0, 2, 3  // Triangle #1 connects points #0, #2 and #3
 };
@@ -130,15 +130,13 @@ cbz::ImageHandle irradianceCubeMapIMGH = {CBZ_INVALID_HANDLE};
 cbz::ShaderHandle skyboxSH = {CBZ_INVALID_HANDLE};
 cbz::GraphicsProgramHandle skyboxGPH = {CBZ_INVALID_HANDLE};
 
-// Flow field
-cbz::ImageHandle flowFieldTexture;
-
 BuiltInRenderPipeline::BuiltInRenderPipeline(uint32_t targetWidth,
                                              uint32_t targetHeight) {
   rebuild(targetWidth, targetHeight);
 
   // Cube map
-  cubeMapSH = cbz::ShaderCreate("assets/shaders/cube_map.wgsl", CBZ_SHADER_WGLSL);
+  cubeMapSH =
+      cbz::ShaderCreate("assets/shaders/cube_map.wgsl", CBZ_SHADER_WGLSL);
   cubeMapGPH = cbz::GraphicsProgramCreate(cubeMapSH);
 
   cbz::VertexLayout cubeLayout = {};
@@ -154,14 +152,15 @@ BuiltInRenderPipeline::BuiltInRenderPipeline(uint32_t targetWidth,
   cubeVBH = cbz::VertexBufferCreate(cubeLayout, 25, cubeVertices);
   cubeIBH = cbz::IndexBufferCreate(CBZ_INDEX_FORMAT_UINT16, 36, cubeIndices);
 
-  // --- IBL --- 
+  // --- IBL ---
   // Convert HDR Image to cube map
   // TODO: Make asset that checks for nullptr load failure
   int w, h, channelCount;
-  float *stbData = stbi_loadf(ASSET_DIR "/textures/citrus_orchard_road_puresky_4k.hdr",
-                              &w, &h, &channelCount, 4);
-  //float *stbData = stbi_loadf(ASSET_DIR "/textures/warm_bar_4k.hdr",
-  //                            &w, &h, &channelCount, 4);
+  float *stbData =
+      stbi_loadf(ASSET_DIR "/textures/citrus_orchard_road_puresky_4k.hdr", &w,
+                 &h, &channelCount, 4);
+  // float *stbData = stbi_loadf(ASSET_DIR "/textures/warm_bar_4k.hdr",
+  //                             &w, &h, &channelCount, 4);
   channelCount = 4;
 
   spdlog::trace(" - w: {} h: {} channels : {}", w, h, channelCount);
@@ -184,7 +183,8 @@ BuiltInRenderPipeline::BuiltInRenderPipeline(uint32_t targetWidth,
 
   stbi_image_free(stbData);
 
-  cubeMapIMGH = cbz::Image2DCubeMapCreate(CBZ_TEXTURE_FORMAT_RGBA16FLOAT, 512, 512, 6, CBZ_IMAGE_RENDER_ATTACHMENT);
+  cubeMapIMGH = cbz::Image2DCubeMapCreate(CBZ_TEXTURE_FORMAT_RGBA16FLOAT, 512,
+                                          512, 6, CBZ_IMAGE_RENDER_ATTACHMENT);
 
   glm::mat4 captureProjection =
       glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
@@ -204,187 +204,62 @@ BuiltInRenderPipeline::BuiltInRenderPipeline(uint32_t targetWidth,
                   glm::vec3(0.0f, -1.0f, 0.0f))};
 
   for (uint32_t i = 0; i < 6; i++) {
-      // Set to target
-	  cbz::AttachmentDescription faceAttachment = {};
-	  faceAttachment.imgh = cubeMapIMGH;
-	  faceAttachment.clearValue = {0.0f, 0.0f, 0.0f, 1.0f};
-	  faceAttachment.baseArrayLayer = i;
-	  cbz::RenderTargetSet(RENDER_PASS_TYPE_CAPTURE_0 + i, &faceAttachment, 1, nullptr);
+    // Set to target
+    cbz::AttachmentDescription faceAttachment = {};
+    faceAttachment.imgh = cubeMapIMGH;
+    faceAttachment.clearValue = {0.0f, 0.0f, 0.0f, 1.0f};
+    faceAttachment.baseArrayLayer = i;
+    cbz::RenderTargetSet(RENDER_PASS_TYPE_CAPTURE_0 + i, &faceAttachment, 1,
+                         nullptr);
 
-      // Draw to target
-      cbz::ProjectionSet(glm::value_ptr(captureProjection));
-      cbz::ViewSet(glm::value_ptr(captureViews[i]));
+    // Draw to target
+    cbz::ProjectionSet(glm::value_ptr(captureProjection));
+    cbz::ViewSet(glm::value_ptr(captureViews[i]));
 
-      cbz::TextureBindingDesc linearTexDesc = {};
-      linearTexDesc.filterMode = CBZ_FILTER_MODE_LINEAR;
-      cbz::TextureSet(CBZ_TEXTURE_0, hdriIMGH, linearTexDesc);
+    cbz::TextureBindingDesc linearTexDesc = {};
+    linearTexDesc.filterMode = CBZ_FILTER_MODE_LINEAR;
+    cbz::TextureSet(CBZ_TEXTURE_0, hdriIMGH, linearTexDesc);
 
-	  cbz::VertexBufferSet(cubeVBH);
-	  cbz::IndexBufferSet(cubeIBH);
-      cbz::Submit(RENDER_PASS_TYPE_CAPTURE_0 + i, cubeMapGPH);
+    cbz::VertexBufferSet(cubeVBH);
+    cbz::IndexBufferSet(cubeIBH);
+    cbz::Submit(RENDER_PASS_TYPE_CAPTURE_0 + i, cubeMapGPH);
   }
 
   // Convolute and render cube map to irradiance cube map
-  irradianceConvolutionSH = cbz::ShaderCreate("assets/shaders/skybox.wgsl", CBZ_SHADER_WGLSL);
+  irradianceConvolutionSH =
+      cbz::ShaderCreate("assets/shaders/skybox.wgsl", CBZ_SHADER_WGLSL);
 
   irradianceConvolutionGPH =
       cbz::GraphicsProgramCreate(irradianceConvolutionSH);
 
-  irradianceCubeMapIMGH = cbz::Image2DCubeMapCreate(CBZ_TEXTURE_FORMAT_RGBA16FLOAT, 32, 32, 6, CBZ_IMAGE_RENDER_ATTACHMENT);
+  irradianceCubeMapIMGH = cbz::Image2DCubeMapCreate(
+      CBZ_TEXTURE_FORMAT_RGBA16FLOAT, 32, 32, 6, CBZ_IMAGE_RENDER_ATTACHMENT);
 
   for (uint32_t i = 0; i < 6; i++) {
-      // Set to target
-	  cbz::AttachmentDescription faceAttachment = {};
-	  faceAttachment.imgh = irradianceCubeMapIMGH;
-	  faceAttachment.clearValue = {0.0f, 0.0f, 0.0f, 1.0f};
-	  faceAttachment.baseArrayLayer = i;
-	  cbz::RenderTargetSet(RENDER_PASS_TYPE_CAPTURE_0 + 6 + i, &faceAttachment, 1, nullptr);
+    // Set to target
+    cbz::AttachmentDescription faceAttachment = {};
+    faceAttachment.imgh = irradianceCubeMapIMGH;
+    faceAttachment.clearValue = {0.0f, 0.0f, 0.0f, 1.0f};
+    faceAttachment.baseArrayLayer = i;
+    cbz::RenderTargetSet(RENDER_PASS_TYPE_CAPTURE_0 + 6 + i, &faceAttachment, 1,
+                         nullptr);
 
-      // Draw to target
-      cbz::ProjectionSet(glm::value_ptr(captureProjection));
-      cbz::ViewSet(glm::value_ptr(captureViews[i]));
+    // Draw to target
+    cbz::ProjectionSet(glm::value_ptr(captureProjection));
+    cbz::ViewSet(glm::value_ptr(captureViews[i]));
 
-      cbz::TextureBindingDesc textureCubeDesc = {};
-      textureCubeDesc.viewDimension = CBZ_TEXTURE_VIEW_DIMENSION_CUBE;
-      textureCubeDesc.filterMode = CBZ_FILTER_MODE_LINEAR;
-      cbz::TextureSet(CBZ_TEXTURE_0, cubeMapIMGH, textureCubeDesc);
+    cbz::TextureBindingDesc textureCubeDesc = {};
+    textureCubeDesc.viewDimension = CBZ_TEXTURE_VIEW_DIMENSION_CUBE;
+    textureCubeDesc.filterMode = CBZ_FILTER_MODE_LINEAR;
+    cbz::TextureSet(CBZ_TEXTURE_0, cubeMapIMGH, textureCubeDesc);
 
-	  cbz::VertexBufferSet(cubeVBH);
-	  cbz::IndexBufferSet(cubeIBH);
-      cbz::Submit(RENDER_PASS_TYPE_CAPTURE_0 + 6 + i, irradianceConvolutionGPH);
+    cbz::VertexBufferSet(cubeVBH);
+    cbz::IndexBufferSet(cubeIBH);
+    cbz::Submit(RENDER_PASS_TYPE_CAPTURE_0 + 6 + i, irradianceConvolutionGPH);
   }
 
   skyboxSH = cbz::ShaderCreate("assets/shaders/skybox.wgsl", CBZ_SHADER_WGLSL);
   skyboxGPH = cbz::GraphicsProgramCreate(skyboxSH);
-
-  // Flow field visualizer
-#define GRID_X 256
-#define GRID_Y 256
-  glm::ivec2 gridDimensions(GRID_X, GRID_Y);
-
-  // const glm::ivec2 dst(gridDimensions.x / 2, gridDimensions.y / 2);
-  const glm::ivec2 dst(gridDimensions.x * 0.5, gridDimensions.y * 0.5);
-  int dstIdx = dst.y * gridDimensions.x + dst.x;
-
-  std::array<uint8_t, GRID_X * GRID_Y> costField = {};
-  for (int i = 0; i < GRID_X * GRID_Y; i++) {
-    costField[i] = 1;
-  }
-
-  costField[dstIdx] = 0;
-
-  std::array<uint8_t, GRID_X * GRID_Y> integrationField = {};
-  integrationField.fill(255);
-  integrationField[dstIdx] = 0;
-
-  std::array<bool, GRID_X * GRID_Y> seenList = {};
-  seenList.fill(false);
-
-  std::array<int, GRID_X * GRID_Y> openList = {};
-  openList.fill(0);
-
-  int openListTail = 0;
-  int openListHead = 1;
-
-  // DFS cost
-  openList[0] = dstIdx;
-  seenList[dstIdx] = true;
-
-  while (openListTail < openListHead) {
-    int cellIdx = openList[openListTail++];
-
-    int neighbors[] = {
-        cellIdx + 1,                // right
-        cellIdx - 1,                // left
-        cellIdx - gridDimensions.x, // top
-        cellIdx + gridDimensions.x  // bottom
-    };
-
-    bool skipNeighbor[] = {false, false, false, false};
-
-    // Checked neighbors
-    for (int directionIdx = 0; directionIdx < 4; directionIdx++) {
-      int neighborCellIdx = neighbors[directionIdx];
-
-      // Skip if out of bounds
-      if (neighborCellIdx < 0 ||
-          neighborCellIdx >= (gridDimensions.x * gridDimensions.y)) {
-        skipNeighbor[directionIdx] = true;
-        continue;
-      }
-
-      // Skip if out of bounds
-      if (neighborCellIdx >= gridDimensions.x * gridDimensions.y) {
-        skipNeighbor[directionIdx] = true;
-        continue;
-      }
-
-      // Skip seen neighbors
-      if (seenList[neighborCellIdx]) {
-        skipNeighbor[directionIdx] = true;
-        continue;
-      }
-    }
-
-    // Add newly seen neighbors to list
-    for (int directionIdx = 0; directionIdx < 4; directionIdx++) {
-      if (!skipNeighbor[directionIdx]) {
-        openList[openListHead] = neighbors[directionIdx];
-        openListHead++;
-
-        // Mark neighbor cell as seen
-        seenList[neighbors[directionIdx]] = true;
-
-        // Accumulate min costs
-        uint8_t newCost =
-            integrationField[cellIdx] + costField[neighbors[directionIdx]];
-        if (newCost < integrationField[neighbors[directionIdx]]) {
-          integrationField[neighbors[directionIdx]] = newCost;
-          if (newCost == 0 && cellIdx != dstIdx) {
-            spdlog::error("{} 0 cost despite not being {}", cellIdx, dstIdx);
-          }
-        }
-      }
-    }
-  }
-
-  flowFieldTexture = cbz::Image2DCreate(
-      CBZ_TEXTURE_FORMAT_RGBA8UNORM, static_cast<uint32_t>(gridDimensions.x),
-      static_cast<uint32_t>(gridDimensions.y));
-  spdlog::info("{} {}", gridDimensions.x, gridDimensions.y);
-
-  std::array<uint8_t, GRID_X * GRID_Y * 4> colors;
-  for (int i = 0; i < GRID_X * GRID_Y; ++i) {
-    uint8_t cost = integrationField[i];
-    uint8_t r, g, b;
-
-    if (cost == 255) {
-      // unreachable cells: black
-      r = 0;
-      g = 0;
-      b = 0;
-    } else {
-      float t = cost / 255.0f; // normalized cost 0..1
-      // green to red gradient
-      r = static_cast<uint8_t>(t * 255);
-      g = static_cast<uint8_t>((1.0f - t) * 255);
-      b = 0;
-    }
-
-    colors[i * 4 + 0] = r;
-    colors[i * 4 + 1] = g;
-    colors[i * 4 + 2] = b;
-    colors[i * 4 + 3] = 255; // fully opaque
-
-    if (cost == 0) {
-      colors[i * 4 + 0] = 0;
-      colors[i * 4 + 1] = 0;
-      colors[i * 4 + 2] = 255;
-    }
-  }
-
-  cbz::Image2DUpdate(flowFieldTexture, colors.data(),
-                     gridDimensions.x * gridDimensions.y);
 }
 
 BuiltInRenderPipeline::~BuiltInRenderPipeline() { destroyAttachments(); }
@@ -422,11 +297,7 @@ void BuiltInRenderPipeline::onImGuiRender() {
   cbz::imgui::Image(mGBuffer.attachments[GBUFFER_NORMAL_ATTACHMENT],
                     ImVec2(avail.y, avail.y));
   ImGui::SameLine();
-  cbz::imgui::Image(mHDRLightingAttachment,
-                    ImVec2(avail.y, avail.y));
-  ImGui::SameLine();
-  cbz::imgui::Image(flowFieldTexture, ImVec2(avail.y, avail.y));
-
+  cbz::imgui::Image(mHDRLightingAttachment, ImVec2(avail.y, avail.y));
   ImGui::End();
 }
 
@@ -507,11 +378,14 @@ void BuiltInRenderPipeline::rebuild(uint32_t w, uint32_t h) {
 
   cbz::AttachmentDescription gBufferAttachments[] = {
       cbz::AttachmentDescription{
-          {0.0f, 0.0f, 0.0f, 0.0f}, mGBuffer.attachments[GBUFFER_POSITION_ATTACHMENT]},
+          {0.0f, 0.0f, 0.0f, 0.0f},
+          mGBuffer.attachments[GBUFFER_POSITION_ATTACHMENT]},
       cbz::AttachmentDescription{
-          {0.0f, 0.0f, 0.0f, 0.0f}, mGBuffer.attachments[GBUFFER_NORMAL_ATTACHMENT]},
+          {0.0f, 0.0f, 0.0f, 0.0f},
+          mGBuffer.attachments[GBUFFER_NORMAL_ATTACHMENT]},
       cbz::AttachmentDescription{
-          {0.0f, 0.0f, 0.0f, 0.0f}, mGBuffer.attachments[GBUFFER_ALBEDO_SPECULAR_ATTACHMENT]},
+          {0.0f, 0.0f, 0.0f, 0.0f},
+          mGBuffer.attachments[GBUFFER_ALBEDO_SPECULAR_ATTACHMENT]},
   };
 
   cbz::RenderTargetSet(RENDER_PASS_TYPE_GEOMETRY, gBufferAttachments,
@@ -528,11 +402,20 @@ void BuiltInRenderPipeline::rebuild(uint32_t w, uint32_t h) {
       CBZ_TEXTURE_FORMAT_DEPTH24PLUS, w, h, CBZ_IMAGE_RENDER_ATTACHMENT);
 
   const cbz::AttachmentDescription lightColorAttachments[]{
-      {{0.0f, 0.0f, 0.0f, 1.0f}, mHDRLightingAttachment, 0, 1, CBZ_RENDER_ATTACHMENT_BLEND},
-      {{0.0f, 0.0f, 0.0f, 1.0f}, mHDRBrightAttachment, 0, 1, CBZ_RENDER_ATTACHMENT_BLEND},
+      {{0.0f, 0.0f, 0.0f, 1.0f},
+       mHDRLightingAttachment,
+       0,
+       1,
+       CBZ_RENDER_ATTACHMENT_BLEND},
+      {{0.0f, 0.0f, 0.0f, 1.0f},
+       mHDRBrightAttachment,
+       0,
+       1,
+       CBZ_RENDER_ATTACHMENT_BLEND},
   };
 
-  const cbz::AttachmentDescription lightDepthAttachment{ {0.0f, 0.0f, 0.0f, 1.0f}, mLightingDepthAttachment}; 
+  const cbz::AttachmentDescription lightDepthAttachment{
+      {0.0f, 0.0f, 0.0f, 1.0f}, mLightingDepthAttachment};
   cbz::RenderTargetSet(RENDER_PASS_TYPE_LIGHTING, lightColorAttachments, 2,
                        &lightDepthAttachment);
 
@@ -567,12 +450,12 @@ void BuiltInRenderPipeline::rebuild(uint32_t w, uint32_t h) {
   fsQuadVertexLayout.end();
 
   mQuadVBH = cbz::VertexBufferCreate(
-      fsQuadVertexLayout, static_cast<uint32_t>(sQuadVertices.size()) / 5,
-      sQuadVertices.data());
+      fsQuadVertexLayout, static_cast<uint32_t>(sFSQuadVertices.size()) / 5,
+      sFSQuadVertices.data());
 
-  mQuadIBH = cbz::IndexBufferCreate(CBZ_INDEX_FORMAT_UINT16,
-                                    static_cast<uint32_t>(sQuadIndices.size()),
-                                    sQuadIndices.data());
+  mQuadIBH = cbz::IndexBufferCreate(
+      CBZ_INDEX_FORMAT_UINT16, static_cast<uint32_t>(sFSQuadIndices.size()),
+      sFSQuadIndices.data());
 
   sBlitSettingsUH = cbz::UniformCreate("uBlitSettings", CBZ_UNIFORM_TYPE_VEC4);
 }
@@ -625,18 +508,18 @@ DebugRenderPipeline::DebugRenderPipeline(cbz::ecs::IWorld *world, uint32_t w,
       cbz::ShaderCreate("assets/shaders/stencilPicker.wgsl", CBZ_SHADER_WGLSL);
   mStencilPickerProgram = cbz::GraphicsProgramCreate(mStencilPickerShader);
   // TODO: Move to application
-  [[maybe_unused]] static int _ = [this]() { 
-      static cbz::ecs::Entity skyBox = mWorld->instantiate("Skybox");
-	  skyBox.addComponent<Position>();
-	  skyBox.addComponent<Rotation>();
-	  skyBox.addComponent<Scale>();
-	  skyBox.addComponent<Transform>();
+  [[maybe_unused]] static int _ = [this]() {
+    static cbz::ecs::Entity skyBox = mWorld->instantiate("Skybox");
+    skyBox.addComponent<Position>();
+    skyBox.addComponent<Rotation>();
+    skyBox.addComponent<Scale>();
+    skyBox.addComponent<Transform>();
 
-	  Skybox& sb = skyBox.addComponent<Skybox>();
-	  sb.irradianceCubeMap = irradianceCubeMapIMGH;
-	  sb.skyboxCubeMap = cubeMapIMGH;
-	  sb.hdriMap = hdriIMGH;
-      return 1;
+    Skybox &sb = skyBox.addComponent<Skybox>();
+    sb.irradianceCubeMap = irradianceCubeMapIMGH;
+    sb.skyboxCubeMap = cubeMapIMGH;
+    sb.hdriMap = hdriIMGH;
+    return 1;
   }();
 
   rebuild(w, h);
@@ -663,7 +546,7 @@ void DebugRenderPipeline::findPickables() {
   mWorld->query<cbz::ecs::Entity, Primitive>(
       [](cbz::ecs::Entity e, [[maybe_unused]] const Primitive &_) {
         mVisible.push_back(e.getId());
-     });
+      });
 
   if ((mVisible.capacity() * sizeof(cbz::ecs::EntityId) %
        CBZ_UNIFORM_SIZE_VEC4) != 0) {
@@ -826,14 +709,11 @@ void DebugRenderPipeline::onImGuiRender() {
           if (ImGui::CollapsingHeader("Material", nullptr,
                                       ImGuiTreeNodeFlags_DefaultOpen)) {
             auto avail = ImGui::GetContentRegionAvail();
-            cbz::imgui::Image(p.materialRef.albedoTexture.imgh,
-                              {avail.x, avail.x});
-            cbz::imgui::Image(p.materialRef.metallicRoughnessTexture.imgh,
-                              {avail.x, avail.x});
-            cbz::imgui::Image(p.materialRef.normalTexture.imgh,
-                              {avail.x, avail.x});
-            cbz::imgui::Image(p.materialRef.occlusionTexture.imgh,
-                              {avail.x, avail.x});
+
+            for (uint8_t i = 0; i < p.materialRef.textureCount; i++) {
+              cbz::imgui::Image(p.materialRef.textures[i].imgh,
+                                {avail.x, avail.x});
+            }
           }
         }
 
@@ -904,7 +784,7 @@ void DebugRenderPipeline::onImGuiRender() {
 }
 
 void DebugRenderPipeline::rebuild(uint32_t w, uint32_t h) {
-  // Pick pass setup 
+  // Pick pass setup
   sPickingTexelBufferW = w;
   sPickingTexelBufferH = h;
 
