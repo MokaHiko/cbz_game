@@ -1,5 +1,7 @@
 #include "renderer/cubozoa_gltf.h"
 
+#include "cbz/cbz_defines.h"
+#include "cbz_gfx/cbz_gfx_defines.h"
 #include "renderer/cubozoa_render_types.h"
 
 #include <cbz/cbz_asset.h>
@@ -19,9 +21,17 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-static std::vector<std::unique_ptr<Asset<MaterialPBR>>> sMaterials;
+static std::vector<std::unique_ptr<Asset<Material>>> sMaterials;
 static std::unordered_map<std::string, std::unique_ptr<Asset<TextureRef>>>
     sTextures;
+
+// -- Default Resources
+static cbz::ImageHandle sWhiteIMGH;
+static cbz::ImageHandle sBlackIMGH;
+static cbz::ImageHandle sDefaultNormalIMGH;
+
+static cbz::ShaderHandle sPBRForwardShader;
+static cbz::GraphicsProgramHandle sPBRForwardProgram;
 
 class TextureAsset : public Asset<TextureRef> {
 public:
@@ -39,22 +49,31 @@ private:
   uint32_t mReferenceCount;
 };
 
-class MaterialPBRAsset : public Asset<MaterialPBR> {
+class MaterialPBRAsset : public Asset<Material> {
 public:
-  MaterialPBRAsset(const std::string &name) : Asset(name) {};
+  MaterialPBRAsset(const std::string &name, cbz::GraphicsProgramHandle ph)
+      : Asset(name), mPH(ph) {};
 
-  MaterialPBR makeRef() override {
+  CBZ_NO_DISCARD Material makeRef() override {
     ++mReferenceCount;
 
     if (mUH.idx == CBZ_INVALID_HANDLE) {
       mUH = cbz::UniformCreate("material", CBZ_UNIFORM_TYPE_VEC4, 3);
     }
 
-    // TODO: Keep track of reference ptrs incase of material mutation.
-    return {uData,           mUH,
-            albedoTexture,   metallicRoughnessTexture,
-            normalTexture,   occlusionTexture,
-            emissiveTexture, this};
+    Material out = {};
+    out.asset = this;
+    out.uData = uData;
+    out.uh = mUH;
+
+    for (uint32_t i = 0; i < MATERIAL_PBR_TEXTURE_COUNT; i++) {
+      out.textures[i] = textures[i];
+    }
+
+    out.textureCount = MATERIAL_PBR_TEXTURE_COUNT;
+    out.ph = mPH;
+
+    return out;
   }
 
   cbz::Result load() override { return cbz::Result::eSuccess; }
@@ -62,30 +81,34 @@ public:
   // Uniform data
   MaterialPBRUniformData uData;
 
-  // PBR
-  TextureRef albedoTexture;
-  TextureRef metallicRoughnessTexture;
+  TextureRef textures[MATERIAL_TEXTURE_MAX];
 
-  // Material
-  TextureRef normalTexture;
-  TextureRef occlusionTexture;
-
-  TextureRef emissiveTexture;
+  // // PBR
+  // TextureRef albedoTexture;
+  // TextureRef metallicRoughnessTexture;
+  //
+  // // Material
+  // TextureRef normalTexture;
+  // TextureRef occlusionTexture;
+  //
+  // TextureRef emissiveTexture;
 
 private:
+  cbz::GraphicsProgramHandle mPH;
   cbz::UniformHandle mUH = {CBZ_INVALID_HANDLE};
   uint32_t mReferenceCount;
 };
 
 class PrimitiveAsset : public Asset<Primitive> {
 public:
-  PrimitiveAsset(const char *path) : Asset(path) {};
+  PrimitiveAsset(const char *path, Material material)
+      : Asset(path), materialRef(material) {};
   ~PrimitiveAsset() {};
 
   cbz::VertexBufferHandle vbh;
   cbz::IndexBufferHandle ibh;
 
-  MaterialPBR materialRef;
+  Material materialRef;
 
   Primitive makeRef() override {
     ++mReferenceCount;
@@ -116,11 +139,6 @@ struct MeshReference {
 
   std::vector<PrimitiveAsset> primitives;
 };
-
-// -- Default Resources
-cbz::ImageHandle sWhiteIMGH;
-cbz::ImageHandle sBlackIMGH;
-cbz::ImageHandle sDefaultNormalIMGH;
 
 struct Gltf {
 public:
@@ -213,7 +231,7 @@ public:
       spdlog::trace("Material: '{}' : ", fastGLTFMaterial.name);
       const fastgltf::PBRData &pbrData = fastGLTFMaterial.pbrData;
       MaterialPBRAsset &material = materials.emplace_back(
-          MaterialPBRAsset(fastGLTFMaterial.name.c_str()));
+          MaterialPBRAsset(fastGLTFMaterial.name.c_str(), sPBRForwardProgram));
 
       material.uData.albedoFactor[0] = pbrData.baseColorFactor.x();
       material.uData.albedoFactor[1] = pbrData.baseColorFactor.y();
@@ -228,11 +246,12 @@ public:
             asset->textures[pbrData.baseColorTexture->textureIndex];
 
         spdlog::trace(" - Albedo Texture: '{}' : ", texture.name);
-        material.albedoTexture =
+        material.textures[MATERIAL_PBR_TEXTURE_ALBEDO] =
             TextureRef(this, loadTexture(&asset.get(), &texture,
                                          CBZ_TEXTURE_FORMAT_RGBA8UNORMSRGB));
       } else {
-        material.albedoTexture = TextureRef(this, sWhiteIMGH);
+        material.textures[MATERIAL_PBR_TEXTURE_ALBEDO] =
+            TextureRef(this, sWhiteIMGH);
       }
 
       if (pbrData.metallicRoughnessTexture.has_value()) {
@@ -240,11 +259,12 @@ public:
             asset->textures[pbrData.metallicRoughnessTexture->textureIndex];
 
         spdlog::trace(" - MetallicRoughness Texture: '{}' : ", texture.name);
-        material.metallicRoughnessTexture =
+        material.textures[MATERIAL_PBR_TEXTURE_METALLIC_ROUGHNESS] =
             TextureRef(this, loadTexture(&asset.get(), &texture,
                                          CBZ_TEXTURE_FORMAT_RGBA8UNORM));
       } else {
-        material.metallicRoughnessTexture = TextureRef(this, sWhiteIMGH);
+        material.textures[MATERIAL_PBR_TEXTURE_METALLIC_ROUGHNESS] =
+            TextureRef(this, sWhiteIMGH);
       }
 
       if (fastGLTFMaterial.normalTexture.has_value()) {
@@ -252,11 +272,12 @@ public:
             asset->textures[fastGLTFMaterial.normalTexture->textureIndex];
 
         spdlog::trace(" - Normal Texture: '{}' : ", texture.name);
-        material.normalTexture =
+        material.textures[MATERIAL_PBR_TEXTURE_NORMAL] =
             TextureRef(this, loadTexture(&asset.get(), &texture,
                                          CBZ_TEXTURE_FORMAT_RGBA8UNORM));
       } else {
-        material.normalTexture = TextureRef(this, sDefaultNormalIMGH);
+        material.textures[MATERIAL_PBR_TEXTURE_NORMAL] =
+            TextureRef(this, sDefaultNormalIMGH);
       }
 
       if (fastGLTFMaterial.occlusionTexture.has_value()) {
@@ -264,11 +285,12 @@ public:
             asset->textures[fastGLTFMaterial.occlusionTexture->textureIndex];
 
         spdlog::trace(" - OcclusionTexture Texture: '{}' : ", texture.name);
-        material.occlusionTexture =
+        material.textures[MATERIAL_PBR_TEXTURE_OCCLUSION] =
             TextureRef(this, loadTexture(&asset.get(), &texture,
                                          CBZ_TEXTURE_FORMAT_RGBA8UNORM));
       } else {
-        material.occlusionTexture = TextureRef(this, sWhiteIMGH);
+        material.textures[MATERIAL_PBR_TEXTURE_OCCLUSION] =
+            TextureRef(this, sWhiteIMGH);
       }
 
       material.uData.emissiveFactor[0] = fastGLTFMaterial.emissiveFactor.x();
@@ -280,11 +302,12 @@ public:
             asset->textures[fastGLTFMaterial.emissiveTexture->textureIndex];
 
         spdlog::trace(" - emissiveTexture Texture: '{}' : ", texture.name);
-        material.emissiveTexture =
+        material.textures[MATERIAL_PBR_TEXTURE_EMISSIVE] =
             TextureRef(this, loadTexture(&asset.get(), &texture,
                                          CBZ_TEXTURE_FORMAT_RGBA8UNORMSRGB));
       } else {
-        material.emissiveTexture = TextureRef(this, sBlackIMGH);
+        material.textures[MATERIAL_PBR_TEXTURE_EMISSIVE] =
+            TextureRef(this, sBlackIMGH);
       }
     }
 
@@ -294,11 +317,17 @@ public:
       spdlog::trace("Mesh: '{}' : ", fastgltfMesh.name);
       spdlog::trace(" - {} primitives ", fastgltfMesh.primitives.size());
 
-      // outMesh.primitives.resize(fastgltfMesh.primitives.size());
       for (auto it = fastgltfMesh.primitives.begin();
            it != fastgltfMesh.primitives.end(); ++it) {
-        PrimitiveAsset &primitive =
-            outMesh.primitives.emplace_back(fastgltfMesh.name.c_str());
+
+        if (!it->materialIndex.has_value()) {
+          spdlog::error("Failed to load mesh {}; no assigned material!");
+          continue;
+        }
+
+        MaterialPBRAsset *materialAsset = &materials[it->materialIndex.value()];
+        PrimitiveAsset &primitive = outMesh.primitives.emplace_back(
+            fastgltfMesh.name.c_str(), materialAsset->makeRef());
 
         auto *positionIt = it->findAttribute("POSITION");
 
@@ -466,12 +495,6 @@ public:
           return cbz::Result::eFileError;
         } break;
         }
-
-        // Material
-        if (it->materialIndex.has_value()) {
-          primitive.materialRef =
-              materials[it->materialIndex.value()].makeRef();
-        }
       }
     }
 
@@ -598,12 +621,13 @@ StaticMeshRenderer::StaticMeshRenderer() {
   uint8_t defaultNormalData[] = {128, 128, 255, 255};
   cbz::Image2DUpdate(sDefaultNormalIMGH, defaultNormalData, 1);
 
-  mPBRForwardShader =
+  sPBRForwardShader =
       cbz::ShaderCreate("assets/shaders/forward.wgsl", CBZ_SHADER_WGLSL);
-  mPBRForwardProgram = cbz::GraphicsProgramCreate(
-      mPBRForwardShader,
+  cbz::ShaderSetName(sPBRForwardShader, "forward_shader",
+                     sizeof("forward_shader"));
+  sPBRForwardProgram = cbz::GraphicsProgramCreate(
+      sPBRForwardShader,
       CBZ_GRAPHICS_PROGRAM_CULL_BACK | CBZ_GRAPHICS_PROGRAM_FRONT_FACE_CCW);
-
   mGBufferShader =
       cbz::ShaderCreate("assets/shaders/gBuffer.wgsl", CBZ_SHADER_WGLSL);
   mGBufferProgram = cbz::GraphicsProgramCreate(mGBufferShader);
@@ -614,14 +638,14 @@ StaticMeshRenderer::~StaticMeshRenderer() {
   cbz::ImageDestroy(sBlackIMGH);
   cbz::ImageDestroy(sDefaultNormalIMGH);
 
-  cbz::ShaderDestroy(mPBRForwardShader);
-  cbz::GraphicsProgramDestroy(mPBRForwardProgram);
+  cbz::ShaderDestroy(sPBRForwardShader);
+  cbz::GraphicsProgramDestroy(sPBRForwardProgram);
   cbz::ShaderDestroy(mGBufferShader);
   cbz::GraphicsProgramDestroy(mGBufferProgram);
 }
 
 #include "renderer/cubozoa_render_graph.h"
-void StaticMeshRenderer::render(const Camera *camera, const Skybox* skybox,
+void StaticMeshRenderer::render(const Camera *camera, const Skybox *skybox,
                                 const LightSource *lightSources, uint32_t count,
                                 Transform *transform, Primitive *primitive) {
   glm::mat4 globalTransform = transform->get();
@@ -636,7 +660,10 @@ void StaticMeshRenderer::render(const Camera *camera, const Skybox* skybox,
     cbz::VertexBufferSet(primitive->vbh);
     cbz::IndexBufferSet(primitive->ibh);
 
-    cbz::TextureSet(CBZ_TEXTURE_0, primitive->materialRef.albedoTexture.imgh, linearTexDesc);
+    cbz::TextureSet(
+        CBZ_TEXTURE_0,
+        primitive->materialRef.textures[MATERIAL_PBR_TEXTURE_ALBEDO].imgh,
+        linearTexDesc);
 
     cbz::TransformSet(glm::value_ptr(globalTransform));
     cbz::ViewSet(camera->view);
@@ -654,6 +681,7 @@ void StaticMeshRenderer::render(const Camera *camera, const Skybox* skybox,
   struct {
     float cameraPosition[4];
   } scene;
+
   memcpy(scene.cameraPosition, camera->position, sizeof(float) * 3);
   cbz::UniformSet(mSceneUH, &scene);
 
@@ -663,14 +691,11 @@ void StaticMeshRenderer::render(const Camera *camera, const Skybox* skybox,
   }
 
   cbz::UniformSet(primitive->materialRef.uh, &primitive->materialRef.uData);
-  cbz::TextureSet(CBZ_TEXTURE_0, primitive->materialRef.albedoTexture.imgh, linearTexDesc);
-  cbz::TextureSet(CBZ_TEXTURE_1,
-                  primitive->materialRef.metallicRoughnessTexture.imgh, linearTexDesc);
-  cbz::TextureSet(CBZ_TEXTURE_2, primitive->materialRef.normalTexture.imgh, linearTexDesc);
 
-  cbz::TextureSet(CBZ_TEXTURE_3, primitive->materialRef.occlusionTexture.imgh, nearestTextDesc);
-
-  cbz::TextureSet(CBZ_TEXTURE_4, primitive->materialRef.emissiveTexture.imgh, linearTexDesc);
+  for (uint8_t i = 0; i < primitive->materialRef.textureCount; i++) {
+    cbz::TextureSet(CBZ_TEXTURE_SLOTS[i],
+                    primitive->materialRef.textures[i].imgh, linearTexDesc);
+  }
 
   cbz::TextureBindingDesc linearCubeDesc = {};
   linearCubeDesc.viewDimension = CBZ_TEXTURE_VIEW_DIMENSION_CUBE;
@@ -682,7 +707,7 @@ void StaticMeshRenderer::render(const Camera *camera, const Skybox* skybox,
   cbz::ProjectionSet(camera->proj);
 
   // Forward rendered objects directly draw to the light pass
-  cbz::Submit(RENDER_PASS_TYPE_LIGHTING, mPBRForwardProgram);
+  cbz::Submit(RENDER_PASS_TYPE_LIGHTING, primitive->materialRef.ph);
 }
 
 // TODO: Make prefabs via lua. Including gltf creation resouces
@@ -782,48 +807,48 @@ TextureRef AssetManager::loadTexture(const std::string &path,
   return sTextures[path]->makeRef();
 }
 
-MaterialHandle AssetManager::loadMaterial(const std::string &path) {
-  auto mat = std::make_unique<MaterialPBRAsset>(path);
-
-  sol::load_result script = mLua.load_file(path);
-
-  if (!script.valid()) {
-    sol::error err = script;
-    spdlog::error("Lua Load Error: {}", err.what());
-    spdlog::error("Failed to load material at {}", path);
-    return {};
-  }
-
-  sol::protected_function_result res = script();
-  if (!res.valid()) {
-    sol::error err = res;
-    spdlog::error("Lua Run Error: {}", err.what());
-    spdlog::error("Failed to load material at {}", path);
-    return {};
-  }
-
-  sol::table materialTable = res;
-  std::string name = materialTable["description"]["name"];
-  std::string shader = materialTable["description"]["shader"];
-
-  mat->albedoTexture = loadTexture(materialTable["textures"]["albedo"],
-                                   CBZ_TEXTURE_FORMAT_RGBA8UNORMSRGB);
-  mat->metallicRoughnessTexture = TextureRef(nullptr, sWhiteIMGH);
-  mat->normalTexture = TextureRef(nullptr, sDefaultNormalIMGH);
-  mat->occlusionTexture = TextureRef(nullptr, sWhiteIMGH);
-  mat->emissiveTexture = TextureRef(nullptr, sBlackIMGH);
-
-  MaterialHandle out = static_cast<uint32_t>(sMaterials.size());
-  sMaterials.emplace_back(std::move(mat));
-  return out;
-}
+// MaterialHandle AssetManager::loadMaterial(const std::string &path) {
+//   auto mat = std::make_unique<MaterialPBRAsset>(path);
+//
+//   sol::load_result script = mLua.load_file(path);
+//
+//   if (!script.valid()) {
+//     sol::error err = script;
+//     spdlog::error("Lua Load Error: {}", err.what());
+//     spdlog::error("Failed to load material at {}", path);
+//     return {};
+//   }
+//
+//   sol::protected_function_result res = script();
+//   if (!res.valid()) {
+//     sol::error err = res;
+//     spdlog::error("Lua Run Error: {}", err.what());
+//     spdlog::error("Failed to load material at {}", path);
+//     return {};
+//   }
+//
+//   sol::table materialTable = res;
+//   std::string name = materialTable["description"]["name"];
+//   std::string shader = materialTable["description"]["shader"];
+//
+//   mat->albedoTexture = loadTexture(materialTable["textures"]["albedo"],
+//                                    CBZ_TEXTURE_FORMAT_RGBA8UNORMSRGB);
+//   mat->metallicRoughnessTexture = TextureRef(nullptr, sWhiteIMGH);
+//   mat->normalTexture = TextureRef(nullptr, sDefaultNormalIMGH);
+//   mat->occlusionTexture = TextureRef(nullptr, sWhiteIMGH);
+//   mat->emissiveTexture = TextureRef(nullptr, sBlackIMGH);
+//
+//   MaterialHandle out = static_cast<uint32_t>(sMaterials.size());
+//   sMaterials.emplace_back(std::move(mat));
+//   return out;
+// }
 
 AssetManager::AssetManager(sol::state &luaState) : mLua(luaState) {
   mLua.create_table("material");
 
-  mLua["material"]["load"] = [this](const char *path) {
-    return loadMaterial(path);
-  };
+  // mLua["material"]["load"] = [this](const char *path) {
+  //   return loadMaterial(path);
+  // };
 }
 
 AssetManager::~AssetManager() {}
